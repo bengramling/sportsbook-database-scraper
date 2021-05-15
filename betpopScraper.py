@@ -1,4 +1,5 @@
 import os
+from time import strftime
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -7,18 +8,23 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from datetime import date, datetime
+import logging
+import pymysql
 
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-options = Options()
-options.add_argument("--headless")
-
-driver = webdriver.Chrome(executable_path=os.path.abspath("/Users/benjamingramling/Desktop/Apps/chromedriver"),
-options=options)
-games = []
-
-#SCRAPING LIVE BASKETBALL
-driver.get('https://plive.ffsvrs.lv/live/?#!/sport/2')
-actions = ActionChains(driver)
+def get_hash(string1, string2):
+    string1 = ''.join(e for e in string1 if e.isalnum())
+    string2 = ''.join(e for e in string2 if e.isalnum())
+    temp1 = (string1 + string2).lower()
+    temp2 = (string2 + string1).lower()
+    a = int(''.join(str(ord(c)) for c in temp1))
+    b = int(''.join(str(ord(c)) for c in temp2))
+    output = str(round((a+b)/2))
+    output = output[:8]
+    return output
 
 def get_games(panel):
     events = WebDriverWait(panel, timeout=4).until(
@@ -29,7 +35,7 @@ def get_games(panel):
         games.append(event.get_attribute('event-id'))
     return games
 
-def expand_all_panels(driver): 
+def expand_all_panels(driver, actions): 
     try:
         expand_all = WebDriverWait(driver, timeout=4).until(
             EC.element_to_be_clickable(((By.ID, "top-expand-all")))
@@ -39,7 +45,7 @@ def expand_all_panels(driver):
         driver.implicitly_wait(1.5)
         expand_all.click()
     except exceptions.TimeoutException:
-        print("Error: Timeout while attempting to press panel expand button")
+        logger.error("Error: Timeout while attempting to press panel expand button")
         
         
 def find_data(driver, game):
@@ -50,7 +56,8 @@ def find_data(driver, game):
                 EC.presence_of_element_located(((By.XPATH, "//h3[text() = 'Game Winner']")))
             )
         except:
-            print("Error: No game winner panel found for gameID:",game)
+            logger.error("Error: No game winner panel found for gameID:")
+            logger.error(game)
             return {}
 
         panel_heading = game_winner_panel.find_element_by_xpath('./..')
@@ -65,49 +72,117 @@ def find_data(driver, game):
         team1 = odds_conts[1].find_element_by_xpath(".//span[@class= 'ng-binding ng-scope']").text
         odds1 = int(odds_conts[1].find_element_by_xpath(".//span[@class= 'emphasis ng-binding ng-scope']").text)
         if odds0 > odds1:
-            favorite = {team1: odds1}
-            underdog = {team0: odds0}
+            favorite = (team1, odds1)
+            underdog = (team0, odds0)
         else:
-            favorite = {team0: odds0}
-            underdog = {team1: odds1}
+            favorite = (team0, odds0)
+            underdog = (team1, odds1)
     except Exception as e:
-        print("Error: Could not get data for event",game)
-        print(e)
+        logger.error("Error: Could not get data for event",game)
         return {}
 
-    output = pd.Series({'Sport': 'Basketball', 'Contenders': [team0, team1], 'Favorite': favorite, 'Underdog': underdog})
+    eventID = get_hash(team0, team1)
+
+    now = datetime.now()
+    output = pd.Series({
+        'Event_ID': eventID, 
+        'Contenders': team0 +" : " +team1, 
+        'Favorite': favorite, 
+        'Underdog': underdog, 
+        'Updated': round(now.timestamp()),
+        'Updated_Clean': now.strftime('%H:%M:%S'),
+        })
     return output
 
-#create dataframe
-db = pd.DataFrame(columns=['Sport','Contenders', 'Favorite','Underdog'])
-
 #main
-try:
-    #Expand the panels
-    expand_all_panels(driver)
+def main(event, context):
 
-    #Get a list of all the panels (open or closed)
+    options = Options()
+    options.add_argument("--headless")
+
+    driver = webdriver.Chrome(options=options)
+    games = []
+
+    #create dataframe
+    db = pd.DataFrame(columns=['Event_ID','Contenders', 'Favorite','Underdog','Updated','Updated_Clean'])
+
     try:
-        panels = WebDriverWait(driver, timeout=4).until(
-            EC.presence_of_all_elements_located(((By.XPATH, "//div[@class='panel']")))
-        )
-    except:
-        print("Error: No panels found")
-
-    #Gather game data for each panel
-    for panel in panels:
-        #get all games in panel
-        games += get_games(panel)
-
-    for game in games:
-        url = 'https://plive.ffsvrs.lv/live/?#!/event/' + game
-        driver.get(url)
-        data = find_data(driver,game)
-        if isinstance(data, pd.Series):
-            db = db.append(data, ignore_index = True)
-            db.to_csv('~/Desktop/output.csv', index = False, header=True)
-        else:
-            pass
+        #connect to DB
+        try:
+            host = 'odds-db.cwlgxzudqrlz.us-east-2.rds.amazonaws.com'
+            user = 'admin'
+            password = 'Benbenben108'
+            database = 'odds'
         
-finally:
-    driver.quit()
+            conn = pymysql.connect(host=host, user=user, passwd=password, db=database)
+            cursor = conn.cursor()
+        except Exception as e:
+            logger.error(e)
+
+        logger.info("Success: connected to database")
+        #SCRAPING LIVE BASKETBALL
+        driver.get('https://plive.ffsvrs.lv/live/?#!/sport/2')
+        actions = ActionChains(driver)
+
+        #Expand the panels
+        expand_all_panels(driver, actions)
+
+        #Get a list of all the panels (open or closed)
+        try:
+            panels = WebDriverWait(driver, timeout=4).until(
+                EC.presence_of_all_elements_located(((By.XPATH, "//div[@class='panel']")))
+            )
+        except:
+            logger.error("Error: No panels found")
+
+        #Gather game data for each panel
+        for panel in panels:
+            expand_all_panels(driver, actions)
+            #get all games in panel
+            games += get_games(panel)
+
+        for game in games:
+            url = 'https://plive.ffsvrs.lv/live/?#!/event/' + game
+            driver.get(url)
+            data = find_data(driver,game)
+            if isinstance(data, pd.Series):
+                #check if event id is in event database
+                cursor.execute("""SELECT * FROM events WHERE contest_id=%s;""", (int(data['Event_ID'])))
+                #if event is not in database, insert it
+                if cursor.fetchall() == ():
+                    cursor.execute("""INSERT INTO events (contest_id, contenders) VALUES (%s,%s);""", (int(data['Event_ID']), data['Contenders']))
+                #otherwise add odd to database
+                cursor.execute(
+                    """INSERT INTO sites 
+                        (site_id, site_name, favorite, fav_odds, underdog, under_odds, event_id, updated, updated_clean)
+                    VALUES 
+                        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        site_id=VALUES(site_id),
+                        site_name=VALUES(site_name), 
+                        favorite=VALUES(favorite), 
+                        fav_odds=VALUES(fav_odds),
+                        underdog=VALUES(underdog),
+                        under_odds=VALUES(under_odds),
+                        event_id=VALUES(event_id),
+                        updated=VALUES(updated),
+                        updated_clean=VALUES(updated_clean);""",(
+                    1,
+                    'BetPop',
+                    data['Favorite'][0],
+                    data['Favorite'][1],
+                    data['Underdog'][0],
+                    data['Underdog'][1],
+                    int(data['Event_ID']),
+                    data['Updated'],
+                    data['Updated_Clean'],
+                ))
+                conn.commit()
+                logger.info(data['Favorite'][0], data['Favorite'][1], data['Underdog'][0], data['Underdog'][1], data['Updated_Clean'])
+            else:
+                pass 
+    finally:
+        driver.quit()
+
+main(0,0)
+
