@@ -21,7 +21,7 @@ docker-build:
 	docker-compose build
 
 docker-run:
-	docker-compose run lambda src/betpopScraper.main
+	docker-compose run lambda src/betpopBasketball.main
 
 build-lambda-package: clean fetch-dependencies
 	mkdir build
@@ -29,7 +29,7 @@ build-lambda-package: clean fetch-dependencies
 	cp -r bin build/.
 	cp -r lib build/.
 	pip install -r requirements.txt -t build/lib/.
-	cd build; zip -9qr build.zip .
-	cp build/build.zip .
+	cd build; zip -9qr betpopBasketball-build.zip .
+	cp build/betpopBasketball-build.zip .
 	rm -rf build
 
