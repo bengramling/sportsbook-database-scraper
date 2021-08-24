@@ -2,6 +2,7 @@ from datetime import date, datetime, tzinfo
 from pytz import timezone
 import logging
 import pymysql
+import os
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -13,10 +14,10 @@ def main(event, context):
 
     #connect to DB
     try:
-        host = 'odds-db.cwlgxzudqrlz.us-east-2.rds.amazonaws.com'
-        user = 'admin'
-        password = 'Benbenben108'
-        database = 'odds'
+        host = os.environ('HOST')
+        user = os.environ('USER')
+        password = os.environ('PASSWORD')
+        database = os.environ('DATABASE')
     
         conn = pymysql.connect(host=host, user=user, passwd=password, db=database)
         logger.info("Success: connected to database")

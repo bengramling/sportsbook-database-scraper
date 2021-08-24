@@ -30,6 +30,6 @@ build-lambda-package: clean fetch-dependencies
 	cp -r lib build/.
 	pip install -r requirements.txt -t build/lib/.
 	cd build; zip -9qr betpopTennis-build.zip .
-	cp build/betpopTennis-build.zip .
+	cp build/betpopTennisbuild.zip .
 	rm -rf build
 
