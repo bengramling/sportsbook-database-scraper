@@ -10,5 +10,5 @@ Webscraping real time data with lambda functions is fast, but not nearly fast en
 * __Step One: Create an Amazon MySQL RDS.__ This is where you will store the input data, and the schema is defined in the post requests to the database in each python file.
 * __Step 1.5: Set your environment variables.__ The environment variables are used by your lambda function to push to the aws mysql rds, populate the host, username, database, and password accordingly.
 * __Step Two: Clean and Package Each Module using the Makerfile.__ Pretty self explanatory, each module here is a different lambda function, one for each sportsbook and then a utility function that cleans up the database.
-* __Step Three: Upload the Zipped Modules to Lambda.__ Make a separate lambda function for each module.
+* __Step Three: Upload the Zipped Modules to S3.__ Make a separate lambda function for each module.
 * __Step Four: Create Cloudwatch Triggers for Each Lambda Function.__ This part is up to user discretion, you can run these at whatever interval you please, but the functions take about a minute each to run, so try not to run them any more frequent than minute-long intervals or you risk running into errors.
